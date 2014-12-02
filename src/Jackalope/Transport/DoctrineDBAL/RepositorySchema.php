@@ -92,6 +92,8 @@ class RepositorySchema extends Schema
         $nodes->addColumn('identifier', 'string');
         $nodes->addColumn('type', 'string');
         $nodes->addColumn('props', 'text');
+        $nodes->addColumn('long_props', 'integer');
+        $nodes->addColumn('decimal_props', 'decimal');
         $nodes->addColumn('depth', 'integer');
         $nodes->addColumn('sort_order', 'integer', array('notnull' => false));
         $nodes->setPrimaryKey(array('id'));
