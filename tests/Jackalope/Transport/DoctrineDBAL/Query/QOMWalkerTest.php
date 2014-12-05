@@ -40,7 +40,7 @@ class QOMWalkerTest extends TestCase
         ;
         $this->factory = new QueryObjectModelFactory(new Factory);
         $this->walker = new QOMWalker($this->nodeTypeManager, $conn);
-        $this->defaultColumns = 'n0.id AS n0_id, n0.path AS n0_path, n0.parent AS n0_parent, n0.local_name AS n0_local_name, n0.namespace AS n0_namespace, n0.workspace_name AS n0_workspace_name, n0.identifier AS n0_identifier, n0.type AS n0_type, n0.props AS n0_props, n0.depth AS n0_depth, n0.sort_order AS n0_sort_order';
+        $this->defaultColumns = 'n0.id AS n0_id, n0.path AS n0_path, n0.parent AS n0_parent, n0.local_name AS n0_local_name, n0.namespace AS n0_namespace, n0.workspace_name AS n0_workspace_name, n0.identifier AS n0_identifier, n0.type AS n0_type, n0.props AS n0_props, n0.long_props AS n0_long_props, n0.decimal_props AS n0_decimal_props, n0.depth AS n0_depth, n0.sort_order AS n0_sort_order';
     }
 
     public function testDefaultQuery()
@@ -186,7 +186,7 @@ class QOMWalkerTest extends TestCase
         $this->assertEquals(sprintf("SELECT %s FROM phpcr_nodes n0 WHERE n0.workspace_name = ? AND n0.type IN ('nt:unstructured') AND n0.path $op '/'", $this->defaultColumns), $sql);
     }
 
-    public function testQueryWithOrderings()
+    public function testQueryWithPathOrder()
     {
         $this->nodeTypeManager->expects($this->once())->method('getSubtypes')->will($this->returnValue( array() ));
 
@@ -202,6 +202,35 @@ class QOMWalkerTest extends TestCase
         $this->assertEquals(
             sprintf("SELECT %s FROM phpcr_nodes n0 WHERE n0.workspace_name = ? AND n0.type IN ('nt:unstructured') ORDER BY n0.path ASC", $this->defaultColumns),
             $sql
+        );
+    }
+
+    public function testQueryWithOrderings()
+    {
+        $this->nodeTypeManager->expects($this->once())->method('getSubtypes')->will($this->returnValue( array() ));
+
+        $query = $this->factory->createQuery(
+            $this->factory->selector('nt:unstructured', 'nt:unstructured'),
+            null,
+            array($this->factory->ascending($this->factory->propertyValue('nt:unstructured', "foobar"))),
+            array()
+        );
+
+        $res = $this->walker->walkQOMQuery($query);
+
+        $this->assertEquals(
+            sprintf(
+                implode(' ', array(
+                    "SELECT %s FROM phpcr_nodes n0 WHERE n0.workspace_name = ?",
+                    "AND n0.type IN ('nt:unstructured')",
+                    "ORDER BY",
+                    "CAST(EXTRACTVALUE(n0.long_props, '//sv:property[@sv:name=\"foobar\"]/sv:value[1]') AS INTEGER),",
+                    "CAST(EXTRACTVALUE(n0.decimal_props, '//sv:property[@sv:name=\"foobar\"]/sv:value[1]') AS DECIMAL),",
+                    "EXTRACTVALUE(n0.props, '//sv:property[@sv:name=\"foobar\"]/sv:value[1]') ASC"
+                )),
+                $this->defaultColumns
+            ),
+            $res[2]
         );
     }
 

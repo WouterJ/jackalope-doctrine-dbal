@@ -207,6 +207,10 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
     private function registerSqliteFunctions(PDOConnection $sqliteConnection)
     {
         $sqliteConnection->sqliteCreateFunction('EXTRACTVALUE', function ($string, $expression) {
+            if (null === $string) {
+                return null;
+            }
+
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $dom->loadXML($string);
             $xpath = new \DOMXPath($dom);
@@ -2243,7 +2247,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
         $primarySource = reset($selectors);
         $primaryType = $primarySource->getSelectorName() ?: $primarySource->getNodeTypeName();
-        error_log($sql);
         $data = $this->conn->fetchAll($sql, array($this->workspaceName));
 
         $results = $properties = $standardColumns = array();
@@ -2292,11 +2295,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                 $selectorName = $column->getSelectorName();
                 $columnName = $column->getPropertyName();
                 $columnPrefix = isset($selectorAliases[$selectorName]) ? $selectorAliases[$selectorName] . '_' : $selectorAliases[''] . '_';
-
-                // do not overwrite jcr:path and jcr:score
-                if (in_array($columnName, array('jcr:path', 'jcr:score'))) {
-                    continue;
-                }
 
                 $dcrValue = 'jcr:uuid' === $columnName
                     ? $row[$columnPrefix . 'identifier']
