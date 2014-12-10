@@ -577,6 +577,8 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $dom->loadXML($row['props']);
+            $dom->loadXML($row['long_props']);
+            $dom->loadXML($row['decimal_props']);
 
             $propsData = array('dom' => $dom);
             // when copying a node, the copy is always a new node. set $isNewNode to true
@@ -650,27 +652,28 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
             $qb = $this->conn->createQueryBuilder();
 
-            $qb->select(':identifier, :type, :path, :local_name, :namespace, :parent, :workspace_name, :props, :depth, COALESCE(MAX(n.sort_order), 0) + 1')
+            $qb->select(':identifier, :type, :path, :local_name, :namespace, :parent, :workspace_name, :props, :long_props, :decimal_props, :depth, COALESCE(MAX(n.sort_order), 0) + 1')
                 ->from('phpcr_nodes', 'n')
                 ->where('n.parent = :parent_a');
 
             $sql = $qb->getSql();
 
             try {
-                $insert = "INSERT INTO phpcr_nodes (identifier, type, path, local_name, namespace, parent, workspace_name, props, depth, sort_order) " . $sql;
-                $this->conn->executeUpdate($insert, array(
-                    'identifier'    => $uuid,
-                    'type'          => $type,
-                    'path'          => $path,
-                    'local_name'    => $localName,
-                    'namespace'     => $namespace,
-                    'parent'        => PathHelper::getParentPath($path),
+                $insert = "INSERT INTO phpcr_nodes (identifier, type, path, local_name, namespace, parent, workspace_name, props, long_props, decimal_props, depth, sort_order) " . $sql;
+
+                $this->conn->executeUpdate($insert, $data = array(
+                    'identifier'      => $uuid,
+                    'type'            => $type,
+                    'path'            => $path,
+                    'local_name'      => $localName,
+                    'namespace'       => $namespace,
+                    'parent'          => PathHelper::getParentPath($path),
                     'workspace_name'  => $this->workspaceName,
-                    'props'         => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
-                    'long_props'    => $propsData['longDom'] ? $propsData['longDom']->saveXML() : null,
-                    'decimal_props' => $propsData['decimalDom'] ? $propsData['decimalDom']->saveXML() : null,
-                    'depth'         => PathHelper::getPathDepth($path),
-                    'parent_a'      => PathHelper::getParentPath($path),
+                    'props'           => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
+                    'long_props'      => $propsData['longDom'] ? $propsData['longDom']->saveXML() : null,
+                    'decimal_props'   => $propsData['decimalDom'] ? $propsData['decimalDom']->saveXML() : null,
+                    'depth'           => PathHelper::getPathDepth($path),
+                    'parent_a'        => PathHelper::getParentPath($path),
                 ));
             } catch(\Exception $e) {
                 if ($e instanceof \PDOException || $e instanceof DBALException) {
@@ -690,10 +693,9 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             if (!$nodeId) {
                 throw new RepositoryException("nodeId for $path not found");
             }
+
             $this->conn->update('phpcr_nodes', array(
                 'props'         => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
-                'long_props'    => $propsData['longDom'] ? $propsData['longDom']->saveXML() : null,
-                'decimal_props' => $propsData['decimalDom'] ? $propsData['decimalDom']->saveXML() : null,
                 ),
                 array('id' => $nodeId)
             );
@@ -967,6 +969,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
         foreach ($properties as $property) {
 
             $column = 'stringDom';
+            $values = null;
 
             switch ($property->getType()) {
                 case PropertyType::WEAKREFERENCE:
@@ -975,6 +978,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                         'type' => $property->getType(),
                         'values' => $property->isMultiple() ? array_unique($property->getString()) : array($property->getString()),
                     );
+                    break;
                 case PropertyType::NAME:
                 case PropertyType::URI:
                 case PropertyType::PATH:
@@ -1068,7 +1072,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                 $propertyNode->setAttribute('sv:type', $property['type']);
                 $propertyNode->setAttribute('sv:multi-valued', $property['multiple'] ? '1' : '0');
                 $lengths = (array) $property['lengths'];
-                foreach ((array) $values as $key => $value) {
+                foreach ((array) $property['values'] as $key => $value) {
                     $element = $propertyNode->appendChild($dom->createElement('sv:value'));
                     $element->appendChild($dom->createTextNode($value));
                     if (isset($lengths[$key])) {
@@ -1124,7 +1128,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             $query = '
               SELECT * FROM phpcr_nodes
               WHERE path = :path
-                AND workspace_name = :workspace
               ORDER BY depth, sort_order ASC';
         }
 
