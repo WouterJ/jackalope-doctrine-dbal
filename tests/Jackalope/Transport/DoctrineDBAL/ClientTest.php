@@ -300,16 +300,15 @@ class ClientTest extends TestCase
 
         $this->session->save();
 
-        $statement = $this->getConnection()->executeQuery('SELECT props, long_props, decimal_props FROM phpcr_nodes WHERE path = ?', array('/testLengthAttribute'));
+        $statement = $this->getConnection()->executeQuery('SELECT props, numerical_props FROM phpcr_nodes WHERE path = ?', array('/testLengthAttribute'));
         $row = $statement->fetch(\PDO::FETCH_ASSOC);
         $props = $row['props'];
-        $longProps = $row['long_props'];
-        $decimalProps = $row['decimal_props'];
+        $decimalProps = $row['numerical_props'];
 
         foreach ($data as $propertyName => $propertyInfo) {
             $propertyElement = null;
 
-            foreach (array($props, $longProps, $decimalProps) as $propXml) {
+            foreach (array($props, $decimalProps) as $propXml) {
                 if (null == $propXml) {
                     continue;
                 }

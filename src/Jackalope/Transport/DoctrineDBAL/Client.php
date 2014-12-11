@@ -577,8 +577,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $dom->loadXML($row['props']);
-            $dom->loadXML($row['long_props']);
-            $dom->loadXML($row['decimal_props']);
+            $dom->loadXML($row['numerical_props']);
 
             $propsData = array('dom' => $dom);
             // when copying a node, the copy is always a new node. set $isNewNode to true
@@ -652,14 +651,14 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
             $qb = $this->conn->createQueryBuilder();
 
-            $qb->select(':identifier, :type, :path, :local_name, :namespace, :parent, :workspace_name, :props, :long_props, :decimal_props, :depth, COALESCE(MAX(n.sort_order), 0) + 1')
+            $qb->select(':identifier, :type, :path, :local_name, :namespace, :parent, :workspace_name, :props, :numerical_props, :depth, COALESCE(MAX(n.sort_order), 0) + 1')
                 ->from('phpcr_nodes', 'n')
                 ->where('n.parent = :parent_a');
 
             $sql = $qb->getSql();
 
             try {
-                $insert = "INSERT INTO phpcr_nodes (identifier, type, path, local_name, namespace, parent, workspace_name, props, long_props, decimal_props, depth, sort_order) " . $sql;
+                $insert = "INSERT INTO phpcr_nodes (identifier, type, path, local_name, namespace, parent, workspace_name, props, numerical_props, depth, sort_order) " . $sql;
 
                 $this->conn->executeUpdate($insert, $data = array(
                     'identifier'      => $uuid,
@@ -670,8 +669,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     'parent'          => PathHelper::getParentPath($path),
                     'workspace_name'  => $this->workspaceName,
                     'props'           => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
-                    'long_props'      => $propsData['longDom'] ? $propsData['longDom']->saveXML() : null,
-                    'decimal_props'   => $propsData['decimalDom'] ? $propsData['decimalDom']->saveXML() : null,
+                    'numerical_props'   => $propsData['numericalDom'] ? $propsData['numericalDom']->saveXML() : null,
                     'depth'           => PathHelper::getPathDepth($path),
                     'parent_a'        => PathHelper::getParentPath($path),
                 ));
@@ -860,14 +858,16 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
         if (!empty($xmlData['props'])) {
             $xmlFields[] = $xmlData['props'];
         }
-        if (!empty($xmlData['long_props'])) {
-            $xmlFields[] = $xmlData['long_props'];
-        }
-        if (!empty($xmlData['decimal_props'])) {
-            $xmlFields[] = $xmlData['decimal_props'];
+
+        if (!empty($xmlData['numerical_props'])) {
+            $xmlFields[] = $xmlData['numerical_props'];
         }
 
         foreach ($xmlFields as $xml) {
+
+            if (null === $xml) {
+                continue;
+            }
 
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $dom->loadXML($xml);
@@ -881,8 +881,14 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                 }
 
                 $values = array();
+                $childNodes = $propertyNode->childNodes;
+
+                if ($childNodes->length === 0) {
+                    continue;
+                }
+
                 $type = PropertyType::valueFromName($propertyNode->getAttribute('sv:type'));
-                foreach ($propertyNode->childNodes as $valueNode) {
+                foreach ($childNodes as $valueNode) {
                     switch ($type) {
                         case PropertyType::NAME:
                         case PropertyType::URI:
@@ -959,9 +965,8 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
         );
 
         $propertyMap = array(
-            'longDom' => array(),
             'stringDom' => array(),
-            'decimalDom' => array(),
+            'numericalDom' => array(),
         );
 
         $binaryData = $references = array();
@@ -987,14 +992,14 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     break;
                 case PropertyType::DECIMAL:
                     $values = $property->getDecimal();
-                    $column = 'decimalDom';
+                    $column = 'numericalDom';
                     break;
                 case PropertyType::BOOLEAN:
                     $values = array_map('intval', (array) $property->getBoolean());
                     break;
                 case PropertyType::LONG:
                     $values = $property->getLong();
-                    $column = 'longDom';
+                    $column = 'numericalDom';
                     break;
                 case PropertyType::BINARY:
                     if ($property->isNew() || $property->isModified()) {
@@ -1032,7 +1037,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     break;
                 case PropertyType::DOUBLE:
                     $values = $property->getDouble();
-                    $column = 'decimalDom';
+                    $column = 'numericalDom';
                     break;
                 default:
                     throw new RepositoryException('unknown type '.$property->getType());
@@ -1049,8 +1054,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
         $ret = array(
             'stringDom' => null,
-            'longDom' => null,
-            'decimalDom' => null,
+            'numericalDom' => null,
             'binaryData' => $binaryData,
             'references' => $references
         );
@@ -1262,7 +1266,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             $params[':fetchDepth'] = $this->fetchDepth;
 
             $query = '
-              SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, long_props, decimal_props, depth, sort_order
+              SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, numerical_props, depth, sort_order
               FROM phpcr_nodes
               WHERE workspace_name = :workspace
                 AND (';
@@ -1276,7 +1280,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                 $i++;
             }
         } else {
-            $query = 'SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, long_props, decimal_props, depth, sort_order
+            $query = 'SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, numerical_props, depth, sort_order
                 FROM phpcr_nodes WHERE workspace_name = :workspace AND (';
 
             $i = 0;
@@ -1350,7 +1354,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             return array();
         }
 
-        $query = 'SELECT id, path, parent, local_name, namespace, workspace_name, identifier, type, props, long_props, decimal_props, depth, sort_order
+        $query = 'SELECT id, path, parent, local_name, namespace, workspace_name, identifier, type, props, numerical_props, depth, sort_order
             FROM phpcr_nodes WHERE workspace_name = ? AND identifier IN (?)';
         if ($this->conn->getDatabasePlatform() instanceof SqlitePlatform) {
             $all = array();
@@ -2276,8 +2280,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     $properties[$selectorName] = (array) static::xmlToProps(
                         array(
                             'props' => $row[$columnPrefix . 'props'],
-                            'decimal_props' => $row[$columnPrefix . 'decimal_props'],
-                            'long_props' => $row[$columnPrefix . 'long_props'],
+                            'numerical_props' => $row[$columnPrefix . 'numerical_props'],
                         ),
                         $this->valueConverter
                     );

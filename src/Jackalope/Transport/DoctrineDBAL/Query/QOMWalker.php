@@ -743,7 +743,7 @@ class QOMWalker
             $direction = 'DESC';
         }
 
-        $ret = $this->walkOperand($ordering->getOperand());
+        $sql = $this->walkOperand($ordering->getOperand());
 
         if ($ordering->getOperand() instanceof QOM\PropertyValueInterface) {
             $operand = $ordering->getOperand();
@@ -751,20 +751,18 @@ class QOMWalker
             if ($property !== 'jcr:path' && $property !== 'jcr:uuid') {
                 $alias = $this->getTableAlias($operand->getSelectorName() . '.' . $property);
 
-                $longSelector = $this->sqlXpathExtractValue($alias, $property, 'long_props');
-                $decimalSelector = $this->sqlXpathExtractValue($alias, $property, 'decimal_props');
+                $numericalSelector = $this->sqlXpathExtractValue($alias, $property, 'numerical_props');
 
-                $ret = sprintf('CAST(%s AS INTEGER), CAST(%s AS DECIMAL), %s',
-                    $longSelector,
-                    $decimalSelector,
-                    $ret
+                $sql = sprintf('CAST(%s AS DECIMAL), %s',
+                    $numericalSelector,
+                    $sql
                 );
             }
         }
 
-        $ret .= ' ' .$direction;
+        $sql .= ' ' .$direction;
 
-        return $ret;
+        return $sql;
     }
 
     /**
@@ -792,7 +790,7 @@ class QOMWalker
     private function sqlXpathValueExists($alias, $property)
     {
         $statements = array();
-        foreach (array('props', 'long_props', 'decimal_props') as $colName) {
+        foreach (array('props', 'numerical_props') as $colName) {
 
             if ($this->platform instanceof MySqlPlatform) {
                 $statements[] = "EXTRACTVALUE($alias.$colName, 'count(//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1])') = 1";
