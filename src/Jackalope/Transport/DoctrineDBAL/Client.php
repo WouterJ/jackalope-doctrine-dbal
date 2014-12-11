@@ -575,10 +575,20 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
         foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
             $newPath = str_replace($srcAbsPath, $dstAbsPath, $row['path']);
 
-            $dom = new \DOMDocument('1.0', 'UTF-8');
-            $dom->loadXML($row['props']);
+            $stringDom = new \DOMDocument('1.0', 'UTF-8');
+            $stringDom->loadXML($row['props']);
 
-            $propsData = array('dom' => $dom);
+            $numericalDom = null;
+
+            if ($row['numerical_props']) {
+                $numericalDom = new \DOMDocument('1.0', 'UTF-8');
+                $numericalDom->loadXML($row['props']);
+            }
+
+            $propsData = array(
+                'stringDom' => $stringDom,
+                'numericalDom' => $numericalDom
+            );
             // when copying a node, the copy is always a new node. set $isNewNode to true
             $newNodeId = $this->syncNode(null, $newPath, $row['type'], true, array(), $propsData);
 
@@ -692,7 +702,8 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             }
 
             $this->conn->update('phpcr_nodes', array(
-                'props'         => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
+                'props'            => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
+                'numerical_props'  => $propsData['numericalDom'] ? $propsData['numericalDom']->saveXML() : null,
                 ),
                 array('id' => $nodeId)
             );
@@ -848,88 +859,69 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
         }
     }
 
-    public static function xmlToProps($xmlData, ValueConverter $valueConverter, $filter = null)
+    public static function xmlToProps($xml, ValueConverter $valueConverter, $filter = null)
     {
         $data = new \stdClass();
 
-        $xmlFields = array();
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $dom->loadXML($xml);
 
-        if (!empty($xmlData['props'])) {
-            $xmlFields[] = $xmlData['props'];
-        }
+        foreach ($dom->getElementsByTagNameNS('http://www.jcp.org/jcr/sv/1.0', 'property') as $propertyNode) {
+            $name = $propertyNode->getAttribute('sv:name');
 
-        foreach ($xmlFields as $xml) {
-
-            if (null === $xml) {
+            // only return the properties that pass through the filter callback
+            if (null !== $filter && is_callable($filter) && false === $filter($name)) {
                 continue;
             }
 
-            $dom = new \DOMDocument('1.0', 'UTF-8');
-            $dom->loadXML($xml);
-
-            foreach ($dom->getElementsByTagNameNS('http://www.jcp.org/jcr/sv/1.0', 'property') as $propertyNode) {
-                $name = $propertyNode->getAttribute('sv:name');
-
-                // only return the properties that pass through the filter callback
-                if (null !== $filter && is_callable($filter) && false === $filter($name)) {
-                    continue;
-                }
-
-                $values = array();
-                $childNodes = $propertyNode->childNodes;
-
-                if ($childNodes->length === 0) {
-                    continue;
-                }
-
-                $type = PropertyType::valueFromName($propertyNode->getAttribute('sv:type'));
-                foreach ($childNodes as $valueNode) {
-                    switch ($type) {
-                        case PropertyType::NAME:
-                        case PropertyType::URI:
-                        case PropertyType::WEAKREFERENCE:
-                        case PropertyType::REFERENCE:
-                        case PropertyType::PATH:
-                        case PropertyType::DECIMAL:
-                        case PropertyType::STRING:
-                            $values[] = $valueNode->nodeValue;
-                            break;
-                        case PropertyType::BOOLEAN:
-                            $values[] = (bool) $valueNode->nodeValue;
-                            break;
-                        case PropertyType::LONG:
-                            $values[] = (int) $valueNode->nodeValue;
-                            break;
-                        case PropertyType::BINARY:
-                            $values[] = (int) $valueNode->nodeValue;
-                            break;
-                        case PropertyType::DATE:
-                            $date = $valueNode->nodeValue;
-                            if ($date) {
-                                $date = new \DateTime($date);
-                                $date->setTimezone(new \DateTimeZone(date_default_timezone_get()));
-                                // Jackalope expects a string, might make sense to refactor to allow \DateTime instances too
-                                $date = $valueConverter->convertType($date, PropertyType::STRING);
-                            }
-                            $values[] = $date;
-                            break;
-                        case PropertyType::DOUBLE:
-                            $values[] = (double) $valueNode->nodeValue;
-                            break;
-                        default:
-                            throw new \InvalidArgumentException("Type with constant $type not found.");
-                    }
-                }
-
+            $values = array();
+            $type = PropertyType::valueFromName($propertyNode->getAttribute('sv:type'));
+            foreach ($propertyNode->childNodes as $valueNode) {
                 switch ($type) {
+                    case PropertyType::NAME:
+                    case PropertyType::URI:
+                    case PropertyType::WEAKREFERENCE:
+                    case PropertyType::REFERENCE:
+                    case PropertyType::PATH:
+                    case PropertyType::DECIMAL:
+                    case PropertyType::STRING:
+                        $values[] = $valueNode->nodeValue;
+                        break;
+                    case PropertyType::BOOLEAN:
+                        $values[] = (bool) $valueNode->nodeValue;
+                        break;
+                    case PropertyType::LONG:
+                        $values[] = (int) $valueNode->nodeValue;
+                        break;
                     case PropertyType::BINARY:
-                        $data->{':' . $name} = $propertyNode->getAttribute('sv:multi-valued') ? $values : $values[0];
+                        $values[] = (int) $valueNode->nodeValue;
+                        break;
+                    case PropertyType::DATE:
+                        $date = $valueNode->nodeValue;
+                        if ($date) {
+                            $date = new \DateTime($date);
+                            $date->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+                            // Jackalope expects a string, might make sense to refactor to allow \DateTime instances too
+                            $date = $valueConverter->convertType($date, PropertyType::STRING);
+                        }
+                        $values[] = $date;
+                        break;
+                    case PropertyType::DOUBLE:
+                        $values[] = (double) $valueNode->nodeValue;
                         break;
                     default:
-                        $data->{$name} = $propertyNode->getAttribute('sv:multi-valued') ? $values : $values[0];
-                        $data->{':' . $name} = $type;
-                        break;
+                        throw new \InvalidArgumentException("Type with constant $type not found.");
                 }
+            }
+
+            switch ($type) {
+                case PropertyType::BINARY:
+                    $data->{':' . $name} = $propertyNode->getAttribute('sv:multi-valued') ? $values : $values[0];
+                    break;
+                default:
+                    $data->{$name} = $propertyNode->getAttribute('sv:multi-valued') ? $values : $values[0];
+                    $data->{':' . $name} = $type;
+                    break;
             }
         }
 
@@ -968,7 +960,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
         foreach ($properties as $property) {
 
-            $indexNumerical = false;
             $values = null;
             $targetDoms = array('stringDom');
 
@@ -1197,7 +1188,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
         foreach ($rows as $row) {
             $this->nodeIdentifiers[$row['path']] = $row['identifier'];
-            $data[$row['path']] = self::xmlToProps($row, $this->valueConverter);
+            $data[$row['path']] = self::xmlToProps($row['props'], $this->valueConverter);
             $data[$row['path']]->{'jcr:primaryType'} = $row['type'];
             $paths[] = $row['path'];
         }
@@ -2276,9 +2267,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
                 if (isset($row[$columnPrefix . 'props'])) {
                     $properties[$selectorName] = (array) static::xmlToProps(
-                        array(
-                            'props' => $row[$columnPrefix . 'props'],
-                        ),
+                        $row[$columnPrefix . 'props'],
                         $this->valueConverter
                     );
                 } else {
