@@ -875,6 +875,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             }
 
             $values = array();
+
             $type = PropertyType::valueFromName($propertyNode->getAttribute('sv:type'));
             foreach ($propertyNode->childNodes as $valueNode) {
                 switch ($type) {
@@ -960,7 +961,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
         foreach ($properties as $property) {
 
-            $values = null;
             $targetDoms = array('stringDom');
 
             switch ($property->getType()) {
@@ -970,7 +970,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                         'type' => $property->getType(),
                         'values' => $property->isMultiple() ? array_unique($property->getString()) : array($property->getString()),
                     );
-                    break;
                 case PropertyType::NAME:
                 case PropertyType::URI:
                 case PropertyType::PATH:
