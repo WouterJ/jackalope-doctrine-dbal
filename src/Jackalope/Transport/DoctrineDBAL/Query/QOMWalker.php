@@ -789,23 +789,15 @@ class QOMWalker
      */
     private function sqlXpathValueExists($alias, $property)
     {
-        $statements = array();
-        foreach (array('props', 'numerical_props') as $colName) {
-
-            if ($this->platform instanceof MySqlPlatform) {
-                $statements[] = "EXTRACTVALUE($alias.$colName, 'count(//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1])') = 1";
-            }
-
-            if ($this->platform instanceof PostgreSqlPlatform) {
-                $statements[] = "xpath_exists('//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1]', CAST($alias.$colName AS xml), ".$this->sqlXpathPostgreSQLNamespaces().") = 't'";
-            }
-
-            if ($this->platform instanceof SqlitePlatform) {
-                $statements[] = "EXTRACTVALUE($alias.$colName, 'count(//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1])') = 1";
-            }
+        if ($this->platform instanceof MySqlPlatform) {
+            return "EXTRACTVALUE($alias.props, 'count(//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1])') = 1";
         }
-
-        return '(' . implode(' OR ', $statements) . ')';
+        if ($this->platform instanceof PostgreSqlPlatform) {
+            return "xpath_exists('//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1]', CAST($alias.props AS xml), ".$this->sqlXpathPostgreSQLNamespaces().") = 't'";
+        }
+        if ($this->platform instanceof SqlitePlatform) {
+            return "EXTRACTVALUE($alias.props, 'count(//sv:property[@sv:name=\"" . $property . "\"]/sv:value[1])') = 1";
+        }
 
         throw new NotImplementedException("Xpath evaluations cannot be executed with '" . $this->platform->getName() . "' yet.");
     }

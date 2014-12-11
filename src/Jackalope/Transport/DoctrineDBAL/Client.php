@@ -577,7 +577,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $dom->loadXML($row['props']);
-            $dom->loadXML($row['numerical_props']);
 
             $propsData = array('dom' => $dom);
             // when copying a node, the copy is always a new node. set $isNewNode to true
@@ -669,7 +668,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     'parent'          => PathHelper::getParentPath($path),
                     'workspace_name'  => $this->workspaceName,
                     'props'           => $propsData['stringDom'] ? $propsData['stringDom']->saveXML() : null,
-                    'numerical_props'   => $propsData['numericalDom'] ? $propsData['numericalDom']->saveXML() : null,
+                    'numerical_props' => $propsData['numericalDom'] ? $propsData['numericalDom']->saveXML() : null,
                     'depth'           => PathHelper::getPathDepth($path),
                     'parent_a'        => PathHelper::getParentPath($path),
                 ));
@@ -859,10 +858,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             $xmlFields[] = $xmlData['props'];
         }
 
-        if (!empty($xmlData['numerical_props'])) {
-            $xmlFields[] = $xmlData['numerical_props'];
-        }
-
         foreach ($xmlFields as $xml) {
 
             if (null === $xml) {
@@ -949,7 +944,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
      *
      * @return array (
      *     'stringDom' => $stringDom,
-     *     'integerDom' => $integerDom',
+     *     'numericalDom' => $numericalDom',
      *     'binaryData' => streams, 
      *     'references' => array('type' => INT, 'values' => array(UUIDs)))
      */
@@ -964,7 +959,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             'rep' => "internal",
         );
 
-        $propertyMap = array(
+        $doms = array(
             'stringDom' => array(),
             'numericalDom' => array(),
         );
@@ -973,8 +968,9 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
 
         foreach ($properties as $property) {
 
-            $column = 'stringDom';
+            $indexNumerical = false;
             $values = null;
+            $targetDoms = array('stringDom');
 
             switch ($property->getType()) {
                 case PropertyType::WEAKREFERENCE:
@@ -992,14 +988,14 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     break;
                 case PropertyType::DECIMAL:
                     $values = $property->getDecimal();
-                    $column = 'numericalDom';
+                    $targetDoms[] = 'numericalDom';
                     break;
                 case PropertyType::BOOLEAN:
                     $values = array_map('intval', (array) $property->getBoolean());
                     break;
                 case PropertyType::LONG:
                     $values = $property->getLong();
-                    $column = 'numericalDom';
+                    $targetDoms[] = 'numericalDom';
                     break;
                 case PropertyType::BINARY:
                     if ($property->isNew() || $property->isModified()) {
@@ -1037,19 +1033,21 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     break;
                 case PropertyType::DOUBLE:
                     $values = $property->getDouble();
-                    $column = 'numericalDom';
+                    $targetDoms[] = 'numericalDom';
                     break;
                 default:
                     throw new RepositoryException('unknown type '.$property->getType());
             }
 
-            $propertyMap[$column][] = array(
-                'name' => $property->getName(),
-                'type' => PropertyType::nameFromValue($property->getType()),
-                'multiple' => $property->isMultiple(),
-                'lengths' => (array) $property->getLength(),
-                'values' => $values,
-            );
+            foreach ($targetDoms as $targetDom) {
+                $doms[$targetDom][] = array(
+                    'name' => $property->getName(),
+                    'type' => PropertyType::nameFromValue($property->getType()),
+                    'multiple' => $property->isMultiple(),
+                    'lengths' => (array) $property->getLength(),
+                    'values' => $values,
+                );
+            }
         }
 
         $ret = array(
@@ -1059,7 +1057,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             'references' => $references
         );
 
-        foreach ($propertyMap as $column => $properties) {
+        foreach ($doms as $targetDom => $properties) {
 
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $rootNode = $dom->createElement('sv:node');
@@ -1090,7 +1088,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             }
 
             if (count($properties)) {
-                $ret[$column] = $dom;
+                $ret[$targetDom] = $dom;
             }
         }
 
@@ -1266,7 +1264,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             $params[':fetchDepth'] = $this->fetchDepth;
 
             $query = '
-              SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, numerical_props, depth, sort_order
+              SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, depth, sort_order
               FROM phpcr_nodes
               WHERE workspace_name = :workspace
                 AND (';
@@ -1280,7 +1278,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                 $i++;
             }
         } else {
-            $query = 'SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, numerical_props, depth, sort_order
+            $query = 'SELECT path AS arraykey, id, path, parent, local_name, namespace, workspace_name, identifier, type, props, depth, sort_order
                 FROM phpcr_nodes WHERE workspace_name = :workspace AND (';
 
             $i = 0;
@@ -1354,7 +1352,7 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
             return array();
         }
 
-        $query = 'SELECT id, path, parent, local_name, namespace, workspace_name, identifier, type, props, numerical_props, depth, sort_order
+        $query = 'SELECT id, path, parent, local_name, namespace, workspace_name, identifier, type, props, depth, sort_order
             FROM phpcr_nodes WHERE workspace_name = ? AND identifier IN (?)';
         if ($this->conn->getDatabasePlatform() instanceof SqlitePlatform) {
             $all = array();
@@ -2280,7 +2278,6 @@ class Client extends BaseTransport implements QueryTransport, WritingInterface, 
                     $properties[$selectorName] = (array) static::xmlToProps(
                         array(
                             'props' => $row[$columnPrefix . 'props'],
-                            'numerical_props' => $row[$columnPrefix . 'numerical_props'],
                         ),
                         $this->valueConverter
                     );
