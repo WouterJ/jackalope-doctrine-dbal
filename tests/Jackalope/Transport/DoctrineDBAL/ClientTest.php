@@ -300,31 +300,19 @@ class ClientTest extends TestCase
 
         $this->session->save();
 
-        $statement = $this->getConnection()->executeQuery('SELECT props, numerical_props FROM phpcr_nodes WHERE path = ?', array('/testLengthAttribute'));
-        $row = $statement->fetch(\PDO::FETCH_ASSOC);
-        $props = $row['props'];
-        $decimalProps = $row['numerical_props'];
+        $statement = $this->getConnection()->executeQuery('SELECT props FROM phpcr_nodes WHERE path = ?', array('/testLengthAttribute'));
+        $xml = $statement->fetchColumn();
 
+        $this->assertNotEquals(false, $xml);
+
+        $doc = new \DOMDocument('1.0', 'utf-8');
+        $doc->loadXML($xml);
+
+        $xpath = new \DOMXPath($doc);
         foreach ($data as $propertyName => $propertyInfo) {
-            $propertyElement = null;
 
-            foreach (array($props, $decimalProps) as $propXml) {
-                if (null == $propXml) {
-                    continue;
-                }
-
-                $doc = new \DOMDocument('1.0', 'utf-8');
-                $doc->loadXML($propXml);
-
-                $xpath = new \DOMXPath($doc);
-                $propertyElement = $xpath->query(sprintf('sv:property[@sv:name="%s"]', $propertyName));
-
-                if ($propertyElement->length > 0) {
-                    break;
-                }
-            }
-
-            $this->assertEquals(1, $propertyElement->length, 'Property ' . $propertyName . ' exists');
+            $propertyElement = $xpath->query(sprintf('sv:property[@sv:name="%s"]', $propertyName));
+            $this->assertEquals(1, $propertyElement->length);
 
             $values = $xpath->query('sv:value', $propertyElement->item(0));
 

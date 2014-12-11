@@ -171,6 +171,11 @@ class QOMWalker
     {
         $sqlColumns = array();
         foreach ($this->schema->getTable('phpcr_nodes')->getColumns() as $column) {
+            // we only have to order by this field, we never read from it
+            if ($column->getName() === 'numerical_props') {
+                continue;
+            }
+
             $sqlColumns[] = $column->getName();
         }
 
@@ -837,7 +842,7 @@ class QOMWalker
     private function sqlXpathExtractValueAttribute($alias, $property, $attribute, $valueIndex = 1)
     {
         if ($this->platform instanceof MySqlPlatform) {
-            return sprintf("EXTRACTVALUE(%s.props, '//sv:property[@sv:name=\"%s\"]/sv:value[%d]/@%s')", $alias, $property, $valueIndex, $attribute);
+            return sprintf("EXTRACTVALUE(%s., '//sv:property[@sv:name=\"%s\"]/sv:value[%d]/@%s')", $alias, $property, $valueIndex, $attribute);
         }
         if ($this->platform instanceof PostgreSqlPlatform) {
             return sprintf("(xpath('//sv:property[@sv:name=\"%s\"]/sv:value[%d]/@%s', CAST(%s.props AS xml), %s))[1]::text", $property, $valueIndex, $attribute, $alias, $this->sqlXpathPostgreSQLNamespaces());
