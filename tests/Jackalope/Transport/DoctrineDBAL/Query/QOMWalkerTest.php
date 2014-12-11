@@ -224,7 +224,7 @@ class QOMWalkerTest extends TestCase
                     "SELECT %s FROM phpcr_nodes n0 WHERE n0.workspace_name = ?",
                     "AND n0.type IN ('nt:unstructured')",
                     "ORDER BY",
-                    "CAST(EXTRACTVALUE(n0.numerical_props, '//sv:property[@sv:name=\"foobar\"]/sv:value[1]') AS INTEGER),",
+                    "CAST(EXTRACTVALUE(n0.numerical_props, '//sv:property[@sv:name=\"foobar\"]/sv:value[1]') AS DECIMAL),",
                     "EXTRACTVALUE(n0.props, '//sv:property[@sv:name=\"foobar\"]/sv:value[1]') ASC"
                 )),
                 $this->defaultColumns
